@@ -1,0 +1,132 @@
+#!/bin/bash
+
+echo "=== Custom uv Buildpack: Starting compilation ==="
+
+# Set up environment
+set -e
+
+# Get buildpack arguments
+BUILD_PATH=$1
+CACHE_PATH=$2
+
+echo "BUILD_PATH: $BUILD_PATH"
+echo "CACHE_PATH: $CACHE_PATH"
+
+# Install uv
+echo "Installing uv..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add uv to PATH
+export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> $HOME/.profile
+
+# Source the uv environment
+source $HOME/.local/bin/env
+
+# Verify uv installation
+echo "uv version:"
+uv --version
+
+# Debug: Show current directory and files
+echo "Current directory: $(pwd)"
+echo "BUILD_PATH: $BUILD_PATH"
+
+# Show what files are available in current directory
+echo "Files in current directory:"
+ls -la
+
+# Show what files are in BUILD_PATH
+echo "Files in BUILD_PATH ($BUILD_PATH):"
+if [ -d "$BUILD_PATH" ]; then
+    ls -la "$BUILD_PATH"
+else
+    echo "BUILD_PATH directory does not exist"
+fi
+
+# Find the application directory
+# In Cloud Foundry, the app files should be in the BUILD_PATH
+if [ -f "$BUILD_PATH/pyproject.toml" ]; then
+    echo "Found pyproject.toml in BUILD_PATH"
+    echo "Copying files from BUILD_PATH to /home/vcap/app"
+    
+    # Create /home/vcap/app directory if it doesn't exist
+    mkdir -p /home/vcap/app
+    
+    # Copy all files from BUILD_PATH to /home/vcap/app
+    cp -r "$BUILD_PATH"/* /home/vcap/app/
+    
+    APP_DIR="/home/vcap/app"
+elif [ -f "pyproject.toml" ]; then
+    echo "Found pyproject.toml in current directory"
+    APP_DIR="$(pwd)"
+else
+    echo "ERROR: Could not find pyproject.toml"
+    echo "Current directory contents:"
+    ls -la
+    echo "BUILD_PATH contents:"
+    if [ -d "$BUILD_PATH" ]; then
+        ls -la "$BUILD_PATH"
+    fi
+    exit 1
+fi
+
+echo "Using application directory: $APP_DIR"
+cd "$APP_DIR"
+
+# List contents of /home/vcap/app (Cloud Foundry app directory)
+echo "=== CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
+echo "Contents of /home/vcap/app:"
+if [ -d "/home/vcap/app" ]; then
+    echo "Directory exists. Listing contents:"
+    ls -la /home/vcap/app
+else
+    echo "Directory /home/vcap/app does not exist yet"
+fi
+echo "=== END CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
+
+# Note: Dependencies will be installed in runtime environment
+echo "Dependencies will be installed in runtime environment during startup"
+
+# Create a startup script in BUILD_PATH so it gets included in the droplet
+echo "Creating startup script..."
+cat > "$BUILD_PATH/start-uv.sh" << 'EOF'
+#!/bin/bash
+
+# Install uv in runtime environment
+echo "Installing uv in runtime environment..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add uv to PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Create virtual environment
+echo "Creating virtual environment..."
+cd "/home/vcap/app"
+uv venv
+
+# Activate the virtual environment
+echo "Activating virtual environment..."
+source .venv/bin/activate
+
+# Install dependencies from pyproject.toml
+echo "Installing dependencies from pyproject.toml..."
+
+# Extract dependencies from pyproject.toml using awk
+# This extracts only the dependencies array content
+dependencies=$(awk '/^dependencies = \[$/,/^\]$/' pyproject.toml | grep -v "dependencies = \[" | grep -v "^\]$" | sed 's/^[[:space:]]*"//' | sed 's/",*$//' | tr '\n' ' ')
+
+echo "Installing dependencies: $dependencies"
+uv pip install $dependencies
+
+# Start JupyterLab
+echo "Starting JupyterLab..."
+exec jupyter lab --ip=0.0.0.0 --port=$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+EOF
+
+chmod +x "$BUILD_PATH/start-uv.sh"
+
+echo "Startup script created at $BUILD_PATH/start-uv.sh"
+echo "Startup script contents:"
+cat "$BUILD_PATH/start-uv.sh"
+
+echo "=== Custom uv Buildpack: Compilation completed successfully ==="

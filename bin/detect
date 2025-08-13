@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# Check if this is a Python application with uv
+if [ -f "pyproject.toml" ] || [ -f "requirements.txt" ]; then
+    echo "uv"
+    exit 0
+fi
+
+exit 1

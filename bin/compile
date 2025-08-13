@@ -116,7 +116,8 @@ echo "Installing dependencies from pyproject.toml..."
 dependencies=$(awk '/^dependencies = \[$/,/^\]$/' pyproject.toml | grep -v "dependencies = \[" | grep -v "^\]$" | sed 's/^[[:space:]]*"//' | sed 's/",*$//' | tr '\n' ' ')
 
 echo "Installing dependencies: $dependencies"
-uv pip install $dependencies
+# Redirect stderr to stdout to avoid [ERR] tags in Cloud Foundry logs
+uv pip install $dependencies 2>&1
 
 # Start JupyterLab
 echo "Starting JupyterLab..."

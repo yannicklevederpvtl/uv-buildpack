@@ -94,7 +94,7 @@ cat > "$BUILD_PATH/start-uv.sh" << 'EOF'
 
 # Install uv in runtime environment
 echo "Installing uv in runtime environment..."
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh 2>&1 | sh
 
 # Add uv to PATH
 export PATH="$HOME/.local/bin:$PATH"
@@ -102,7 +102,7 @@ export PATH="$HOME/.local/bin:$PATH"
 # Create virtual environment
 echo "Creating virtual environment..."
 cd "/home/vcap/app"
-uv venv
+uv venv 2>&1
 
 # Activate the virtual environment
 echo "Activating virtual environment..."

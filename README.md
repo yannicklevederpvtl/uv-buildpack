@@ -201,7 +201,7 @@ python-3.11.x
 #### Supported Methods
 The buildpack supports the following ways to specify how your application should start. Commands are evaluated in the following priority order:
 
-#### 1. START_COMMAND_OVERRIDE Environment Variable (Highest Priority)
+#### 1. START_COMMAND_OVERRIDE Environment Variable
 Set the start command via environment variable in your `manifest.yml`:
 ```yaml
 applications:
@@ -224,7 +224,7 @@ If no start command is specified and `jupyterlab` is not in dependencies, the bu
 #### Why These Limitations Exist
 Cloud Foundry processes Procfiles, CF CLI commands, and manifest `command` fields **before** our buildpack's startup script runs. This means these commands would execute without the virtual environment and dependencies being available, causing "command not found" errors.
 
-Our buildpack uses environment variables because they are processed by our startup script **after** dependencies are installed and the virtual environment is unpacked.
+Our buildpack uses environment variables because they are processed by our startup script **after** dependencies are installed.
 
 ### UV Optimization Features
 

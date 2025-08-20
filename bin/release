@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Read the release configuration
+cat << EOF
+---
+default_process_types:
+  web: /home/vcap/app/start-uv.sh
+env:
+  START_COMMAND_OVERRIDE: ${START_COMMAND_OVERRIDE:-}
+  CF_START_COMMAND: ${CF_START_COMMAND:-}
+  PYTHON_VERSION_OVERRIDE: ${PYTHON_VERSION_OVERRIDE:-}
+  UV_CACHE_DIR: ${UV_CACHE_DIR:-/tmp/uv-cache}
+  UV_CACHE_TTL: ${UV_CACHE_TTL:-3600}
+  UV_NO_CACHE: ${UV_NO_CACHE:-false}
+EOF

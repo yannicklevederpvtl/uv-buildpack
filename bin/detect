@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Check if this is a Python application compatible with uv
+# Primary: pyproject.toml (UV's native format)
+# Secondary: requirements.txt (UV can install from this)
+# Optional: uv.lock (indicates UV project)
+
+if [ -f "pyproject.toml" ]; then
+    echo "uv"
+    exit 0
+fi
+
+if [ -f "requirements.txt" ]; then
+    echo "uv"
+    exit 0
+fi
+
+# Check for uv.lock as an additional indicator
+if [ -f "uv.lock" ]; then
+    echo "uv"
+    exit 0
+fi
+
+exit 1

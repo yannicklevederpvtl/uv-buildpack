@@ -88,8 +88,33 @@ else
 fi
 echo "=== END CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
 
-# Install dependencies during staging phase
-echo "Installing dependencies during staging phase..."
+echo "UV installed during staging phase - dependencies will be installed at runtime"
+
+# Create a startup script that installs dependencies at runtime
+echo "Creating startup script..."
+cat > "$BUILD_PATH/start-uv.sh" << 'EOF'
+#!/bin/bash
+
+echo "=== UV Buildpack: Starting application ==="
+
+# Install uv in runtime environment
+echo "Installing uv in runtime environment..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add uv to PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Verify uv installation
+if ! command -v uv &> /dev/null; then
+    echo "ERROR: Failed to install uv"
+    exit 1
+fi
+
+echo "UV installed successfully: $(uv --version)"
+
+# Change to application directory
+cd "/home/vcap/app"
+echo "Changed to application directory: $(pwd)"
 
 # Enhanced Python version management
 PYTHON_VERSION=""
@@ -139,10 +164,6 @@ echo "Using Python: $(.venv/bin/python --version)"
 echo "Activating virtual environment..."
 source .venv/bin/activate
 
-# Install venv-pack for packaging
-echo "Installing venv-pack for virtual environment packaging..."
-uv pip install venv-pack >/dev/null 2>&1
-
 # Enhanced dependency installation with lock file support
 echo "Installing dependencies..."
 
@@ -175,60 +196,6 @@ else
     echo "ERROR: No dependency file found (pyproject.toml or requirements.txt)"
     exit 1
 fi
-
-# Package the virtual environment using venv-pack
-echo "Packaging virtual environment using venv-pack..."
-venv-pack -o .venv.tar.gz >/dev/null 2>&1
-
-# Verify the package was created
-if [ ! -f ".venv.tar.gz" ]; then
-    echo "ERROR: Failed to create virtual environment package"
-    exit 1
-fi
-
-echo "Virtual environment packaged successfully: .venv.tar.gz"
-echo "Package size: $(du -h .venv.tar.gz | cut -f1)"
-
-echo "Dependencies installed and packaged during staging phase"
-
-# Create a startup script that unpacks the virtual environment
-echo "Creating startup script..."
-cat > "$BUILD_PATH/start-uv.sh" << 'EOF'
-#!/bin/bash
-
-echo "=== UV Buildpack: Starting application ==="
-
-# Change to application directory
-cd "/home/vcap/app"
-echo "Changed to application directory: $(pwd)"
-
-# Check if virtual environment package exists
-if [ ! -f ".venv.tar.gz" ]; then
-    echo "ERROR: Virtual environment package (.venv.tar.gz) not found"
-    echo "Available files:"
-    ls -la
-    exit 1
-fi
-
-# Unpack the virtual environment
-echo "Unpacking virtual environment..."
-mkdir -p .venv
-tar -xzf .venv.tar.gz -C .venv >/dev/null 2>&1
-
-# Verify virtual environment was unpacked
-if [ ! -f ".venv/bin/python" ]; then
-    echo "ERROR: Failed to unpack virtual environment"
-    echo "Contents of .venv directory:"
-    ls -la .venv/ 2>/dev/null || echo "No .venv directory"
-    exit 1
-fi
-
-echo "Virtual environment unpacked successfully"
-echo "Using Python: $(.venv/bin/python --version)"
-
-# Activate the virtual environment
-echo "Activating virtual environment..."
-source .venv/bin/activate
 
 # Determine start command based on priority order
 START_COMMAND=""
@@ -288,7 +255,7 @@ echo "Copying application files to runtime directory..."
 # Create /home/vcap/app directory if it doesn't exist
 mkdir -p /home/vcap/app
 
-# Copy application files to runtime directory (including the packaged venv)
+# Copy application files to runtime directory
 if [ -n "$APP_DIR" ]; then
     echo "Copying application files from: $APP_DIR"
     cp -r "$APP_DIR"/* /home/vcap/app/ 2>/dev/null || true
@@ -298,7 +265,7 @@ else
 fi
 
 echo "Application files copied to runtime directory successfully"
-echo "Virtual environment package location: /home/vcap/app/.venv.tar.gz"
+echo "Virtual environment location: /home/vcap/app/.venv/"
 
 echo "Application setup completed successfully"
 echo "=== Custom uv Buildpack: Compilation completed successfully ==="

@@ -23,14 +23,16 @@ This is a custom Cloud Foundry buildpack that uses [uv](https://github.com/astra
 ```
 bin/
 ├── detect      # Detects Python applications with pyproject.toml, requirements.txt, or uv.lock
-├── compile     # Staging phase: installs dependencies and packages virtual environment
+├── compile     # Staging phase: installs uv and prepares startup script
 └── release     # Provides startup command metadata
 ```
 
 ### Runtime Flow
-1. **Unpack virtual environment** using `venv-pack`
-2. **Activate virtual environment**
-3. **Start application** with pre-installed dependencies
+1. **Install uv** in runtime environment
+2. **Create virtual environment** with specified Python version
+3. **Install dependencies** using uv
+4. **Activate virtual environment**
+5. **Start application** with installed dependencies
 
 ## Usage
 
@@ -240,7 +242,7 @@ uv lock
 The buildpack includes several optimizations for Cloud Foundry:
 
 - **Lock File Usage**: ~50-70% faster dependency installation when `uv.lock` is present
-- **Virtual Environment Packaging**: Uses `venv-pack` for fast runtime startup
+- **Runtime Dependency Installation**: Dependencies installed during application startup
 - **Python Version Management**: Automatic Python version installation if not available
 - **Reproducible Builds**: Exact dependency versions with lock files
 
@@ -259,21 +261,19 @@ health-check-type: port
 ### Known Issues
 - **Limited testing**: Not thoroughly tested in production environments
 - **Version compatibility**: May not work with all Python package combinations
-- **Platform compatibility**: Virtual environment packaging requires matching OS types
+- **Startup time**: Dependencies are installed during runtime, which may increase startup time
 
 ### Experimental Features
-- **Staging dependency installation**: Dependencies installed during buildpack staging phase
-- **Virtual environment packaging**: Uses `venv-pack` to package and distribute virtual environments
+- **Runtime dependency installation**: Dependencies installed during application startup phase
 - **Lock file support**: Reproducible builds with `uv.lock` files
 - **Enhanced Python version management**: Automatic Python version installation
 - **Flexible start commands**: Support for environment variables
 
 ### Production Considerations
-- **Faster startup**: No runtime dependency installation required
-- **Offline capable**: No internet dependency during application startup
-- **Consistent environments**: Exact same virtual environment across all instances
-- **Larger droplet size**: Virtual environment packages increase application size
-- **Platform requirements**: Staging and runtime environments must have compatible OS types
+- **Reliable startup**: Dependencies installed fresh in runtime environment
+- **Consistent environments**: Each instance gets its own virtual environment
+- **Longer startup times**: Dependency installation happens during application startup
+- **Internet dependency**: Requires internet access during startup for dependency installation
 
 ## Best Practices for Production
 
@@ -285,17 +285,13 @@ health-check-type: port
    git commit -m "Add lock file for reproducible builds"
    ```
 
-2. **Monitor Package Sizes**: Keep virtual environment packages manageable
-   - Use lock files to reduce package size
-   - Consider excluding unnecessary dependencies
-
-3. **Specify Python Version**: Use `runtime.txt` for consistent Python versions
+2. **Specify Python Version**: Use `runtime.txt` for consistent Python versions
    ```
    # runtime.txt
    python-3.11.x
    ```
 
-4. **Use environment variables**: Define explicit start commands for better control
+3. **Use environment variables**: Define explicit start commands for better control
    ```yaml
    # manifest.yml
    applications:
@@ -307,7 +303,7 @@ health-check-type: port
 ### Monitoring and Debugging
 - **Check Logs**: Monitor application logs for startup performance
 - **Startup Times**: Track startup performance with and without lock files
-- **Virtual Environment Size**: Monitor the size of packaged virtual environments
+- **Dependency Installation**: Monitor dependency installation times
 
 ## Important Notes
 
@@ -349,14 +345,14 @@ The buildpack can be customized by modifying:
    - Ensure the buildpack creates the startup script in the correct location
    - Check that the release script points to the right path
 
-2. **Virtual environment not unpacking**
-   - Verify the `.venv.tar.gz` file exists in the application directory
-   - Check that the virtual environment was packaged during staging
-   - Ensure the runtime environment has sufficient disk space
+2. **Dependencies not installing**
+   - Verify the dependency files exist in the application directory
+   - Check that the virtual environment was created successfully
+   - Ensure the runtime environment has internet access
 
-3. **Large droplet size**
-   - Virtual environment packages increase application size
-   - Consider using lock files to reduce package size
+3. **Long startup times**
+   - Use lock files to speed up dependency installation
+   - Consider pre-installing common dependencies
 
 4. **Permission errors**
    - Ensure buildpack scripts have execute permissions
@@ -373,7 +369,7 @@ cf logs cf-jupyterlab --recent
 For production use, consider:
 - **Official Python buildpack**: More stable and well-tested
 - **Paketo Python buildpack**: Modern buildpack with comprehensive features
-- **Custom buildpack with runtime installation**: Install dependencies during runtime phase
+- **Custom buildpack with staging installation**: Install dependencies during staging phase
 
 ## Contributing
 

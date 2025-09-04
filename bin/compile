@@ -1,0 +1,286 @@
+#!/bin/bash
+
+echo "=== Custom uv Buildpack v1.0.2-fix-double-path: Starting compilation ==="
+
+# Set up environment
+set -e
+
+# Get buildpack arguments
+BUILD_PATH=$1
+CACHE_PATH=$2
+
+echo "BUILD_PATH: $BUILD_PATH"
+echo "CACHE_PATH: $CACHE_PATH"
+
+# Install uv during staging phase
+echo "Installing uv during staging phase..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add uv to PATH
+export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> $HOME/.profile
+
+# Source the uv environment
+source $HOME/.local/bin/env
+
+# Verify uv installation
+echo "uv version:"
+uv --version
+
+# Debug: Show current directory and files
+echo "Current directory: $(pwd)"
+echo "BUILD_PATH: $BUILD_PATH"
+
+# Show what files are available in current directory
+echo "Files in current directory:"
+ls -la
+
+# Show what files are in BUILD_PATH
+echo "Files in BUILD_PATH ($BUILD_PATH):"
+if [ -d "$BUILD_PATH" ]; then
+    ls -la "$BUILD_PATH"
+else
+    echo "BUILD_PATH directory does not exist"
+fi
+
+# Find the application directory
+APP_DIR=""
+
+# Check for Python application files in BUILD_PATH first
+if [ -f "$BUILD_PATH/pyproject.toml" ] || [ -f "$BUILD_PATH/requirements.txt" ] || [ -f "$BUILD_PATH/uv.lock" ]; then
+    echo "Found Python application files in BUILD_PATH"
+    APP_DIR="$BUILD_PATH"
+elif [ -f "pyproject.toml" ] || [ -f "requirements.txt" ] || [ -f "uv.lock" ]; then
+    echo "Found Python application files in current directory"
+    APP_DIR="$(pwd)"
+else
+    echo "ERROR: Could not find Python application files (pyproject.toml, requirements.txt, or uv.lock)"
+    echo "Current directory contents:"
+    ls -la
+    echo "BUILD_PATH contents:"
+    if [ -d "$BUILD_PATH" ]; then
+        ls -la "$BUILD_PATH"
+    fi
+    exit 1
+fi
+
+# Check for runtime.txt to determine Python version
+if [ -f "$APP_DIR/runtime.txt" ]; then
+    echo "Found runtime.txt:"
+    cat "$APP_DIR/runtime.txt"
+    # Note: UV will handle Python version selection based on runtime.txt
+    # The actual Python version installation will happen in the runtime environment
+else
+    echo "No runtime.txt found, UV will use default Python version"
+fi
+
+echo "Using application directory: $APP_DIR"
+cd "$APP_DIR"
+
+# List contents of /home/vcap/app (Cloud Foundry app directory)
+echo "=== CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
+echo "Contents of /home/vcap/app:"
+if [ -d "/home/vcap/app" ]; then
+    echo "Directory exists. Listing contents:"
+    ls -la /home/vcap/app
+else
+    echo "Directory /home/vcap/app does not exist yet"
+fi
+echo "=== END CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
+
+echo "UV installed during staging phase - dependencies will be installed at runtime"
+
+# Create a startup script that installs dependencies at runtime
+echo "Creating startup script..."
+cat > "$BUILD_PATH/start-uv.sh" << 'EOF'
+#!/bin/bash
+
+echo "=== UV Buildpack v1.0.2-fix-double-path: Starting application ==="
+
+# Install uv in runtime environment
+echo "Installing uv in runtime environment..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Add uv to PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Verify uv installation
+if ! command -v uv &> /dev/null; then
+    echo "ERROR: Failed to install uv"
+    exit 1
+fi
+
+echo "UV installed successfully: $(uv --version)"
+
+# Change to application directory
+cd "/home/vcap/app"
+echo "Changed to application directory: $(pwd)"
+
+# Enhanced Python version management
+PYTHON_VERSION=""
+if [ -f "runtime.txt" ]; then
+    echo "Found runtime.txt, setting Python version..."
+    PYTHON_VERSION=$(cat runtime.txt | sed 's/python-//')
+    echo "Using Python version from runtime.txt: $PYTHON_VERSION"
+elif [ -n "$PYTHON_VERSION_OVERRIDE" ]; then
+    PYTHON_VERSION="$PYTHON_VERSION_OVERRIDE"
+    echo "Using Python version from environment: $PYTHON_VERSION"
+fi
+
+# Clean up Python version string (remove .x suffix if present)
+if [[ "$PYTHON_VERSION" == *".x" ]]; then
+    PYTHON_VERSION=$(echo "$PYTHON_VERSION" | sed 's/\.x$//')
+    echo "Cleaned Python version: $PYTHON_VERSION"
+fi
+
+# Create virtual environment with enhanced Python version handling
+echo "Creating virtual environment..."
+if [ -n "$PYTHON_VERSION" ]; then
+    echo "Checking if Python version $PYTHON_VERSION is available..."
+    if uv python list 2>/dev/null | grep -q "$PYTHON_VERSION"; then
+        echo "Python version $PYTHON_VERSION found, creating venv..."
+        uv venv --python "$PYTHON_VERSION" >/dev/null 2>&1
+    else
+        echo "Python version $PYTHON_VERSION not found, installing..."
+        uv python install "$PYTHON_VERSION" >/dev/null 2>&1
+        echo "Creating virtual environment with Python $PYTHON_VERSION..."
+        uv venv --python "$PYTHON_VERSION" >/dev/null 2>&1
+    fi
+else
+    echo "Using default Python version..."
+    uv venv >/dev/null 2>&1
+fi
+
+# Verify virtual environment was created
+if [ ! -f ".venv/bin/python" ]; then
+    echo "ERROR: Failed to create virtual environment"
+    exit 1
+fi
+
+echo "Virtual environment created successfully"
+echo "Using Python: $(.venv/bin/python --version)"
+
+# Fix shebangs in virtual environment binaries
+echo "Fixing shebangs in virtual environment binaries..."
+find .venv/bin -type f -executable -exec sed -i '1s|^#!.*|#!/home/vcap/app/.venv/bin/python|' {} \;
+echo "Shebangs fixed successfully"
+
+# Activate the virtual environment
+echo "Activating virtual environment..."
+source .venv/bin/activate
+
+# Enhanced dependency installation with lock file support
+echo "Installing dependencies..."
+
+if [ -f "pyproject.toml" ]; then
+    echo "Found pyproject.toml..."
+    if [ -f "uv.lock" ]; then
+        echo "Found uv.lock, using locked dependencies for reproducible install..."
+        uv sync --frozen >/dev/null 2>&1
+        echo "Dependencies installed successfully from lock file"
+    else
+        echo "No lock file found, installing dependencies (may take longer)..."
+        # Extract dependencies from pyproject.toml using awk (original working approach)
+        dependencies=$(awk '/^dependencies = \[$/,/^\]$/' pyproject.toml | grep -v "dependencies = \[" | grep -v "^\]$" | sed 's/^[[:space:]]*"//' | sed 's/",*$//' | tr '\n' ' ')
+        echo "Installing dependencies: $dependencies"
+        uv pip install $dependencies >/dev/null 2>&1
+        echo "Dependencies installed successfully"
+    fi
+elif [ -f "requirements.txt" ]; then
+    echo "Installing from requirements.txt..."
+    if [ -f "uv.lock" ]; then
+        echo "Found uv.lock, using locked dependencies..."
+        uv sync --frozen >/dev/null 2>&1
+        echo "Dependencies installed successfully from lock file"
+    else
+        echo "No lock file found, installing from requirements.txt..."
+        uv pip install -r requirements.txt >/dev/null 2>&1
+        echo "Dependencies installed successfully"
+    fi
+else
+    echo "ERROR: No dependency file found (pyproject.toml or requirements.txt)"
+    exit 1
+fi
+
+# Determine start command based on priority order
+START_COMMAND=""
+
+# 1. Check for environment variable override (from manifest or CLI)
+if [ -n "$START_COMMAND_OVERRIDE" ]; then
+    # Modern approach: Use uv run for everything, no complex path replacement needed
+    if [[ "$START_COMMAND_OVERRIDE" == uv* ]]; then
+        # Command already starts with uv, use as-is
+        START_COMMAND="cd /home/vcap/app && $START_COMMAND_OVERRIDE"
+        echo "Using override start command with uv: $START_COMMAND"
+    else
+        # Wrap command with uv run
+        START_COMMAND="cd /home/vcap/app && uv run $START_COMMAND_OVERRIDE"
+        echo "Using override start command with uv run: $START_COMMAND"
+    fi
+fi
+
+# 2. Check for CF CLI command override
+if [ -z "$START_COMMAND" ] && [ -n "$CF_START_COMMAND" ]; then
+    START_COMMAND="$CF_START_COMMAND"
+    echo "Using CF CLI start command: $START_COMMAND"
+fi
+
+        # 3. Fallback to JupyterLab if it's in dependencies and no other command specified
+        if [ -z "$START_COMMAND" ]; then
+            if [ -f "pyproject.toml" ] && grep -q "jupyterlab" pyproject.toml; then
+                echo "No start command specified, but jupyterlab found in dependencies. Starting JupyterLab..."
+                START_COMMAND="cd /home/vcap/app && uv run jupyter lab --ip=0.0.0.0 --port=$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
+            elif [ -f "requirements.txt" ] && grep -q "jupyterlab" requirements.txt; then
+                echo "No start command specified, but jupyterlab found in requirements.txt. Starting JupyterLab..."
+                START_COMMAND="cd /home/vcap/app && uv run jupyter lab --ip=0.0.0.0 --port=$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
+            else
+                echo "ERROR: No start command specified and jupyterlab not found in dependencies."
+                echo "Please provide one of the following:"
+                echo "  - A start command in your manifest.yml"
+                echo "  - Add jupyterlab to your dependencies for automatic startup"
+                echo "  - Use cf push with -c flag to specify a start command"
+                exit 1
+            fi
+        fi
+
+# Ensure we're using the virtual environment's Python
+export PATH="/home/vcap/app/.venv/bin:$PATH"
+echo "Using Python from: $(which python)"
+echo "Python version: $(python --version)"
+
+echo "Starting application..."
+echo "Final command: $START_COMMAND"
+echo "=== UV Buildpack v1.0.2-fix-double-path: Launching application ==="
+
+        # Activate virtual environment and execute
+        echo "Activating virtual environment and executing..."
+        source .venv/bin/activate
+        echo "Virtual environment activated. Python path: $(which python)"
+        echo "Executing: $START_COMMAND"
+        eval "$START_COMMAND"
+EOF
+
+chmod +x "$BUILD_PATH/start-uv.sh"
+
+echo "Startup script created at $BUILD_PATH/start-uv.sh"
+
+# Copy the application files to runtime directory
+echo "Copying application files to runtime directory..."
+
+# Create /home/vcap/app directory if it doesn't exist
+mkdir -p /home/vcap/app
+
+# Copy application files to runtime directory
+if [ -n "$APP_DIR" ]; then
+    echo "Copying application files from: $APP_DIR"
+    cp -r "$APP_DIR"/* /home/vcap/app/ 2>/dev/null || true
+else
+    echo "Copying application files from current directory: $(pwd)"
+    cp -r ./* /home/vcap/app/ 2>/dev/null || true
+fi
+
+echo "Application files copied to runtime directory successfully"
+echo "Virtual environment location: /home/vcap/app/.venv/"
+
+echo "Application setup completed successfully"
+echo "=== Custom uv Buildpack v1.0.2-fix-double-path: Compilation completed successfully ==="

@@ -135,25 +135,80 @@ fi
 
 # Create virtual environment with enhanced Python version handling
 echo "Creating virtual environment..."
+echo "DEBUG: Current directory: $(pwd)"
+echo "DEBUG: Disk space available:"
+df -h .
+echo "DEBUG: Permissions on current directory:"
+ls -ld .
+echo "DEBUG: Contents of current directory:"
+ls -la
+
 if [ -n "$PYTHON_VERSION" ]; then
+    echo "DEBUG: Python version requested: $PYTHON_VERSION"
+    echo "DEBUG: Checking available Python versions..."
+    uv python list 2>&1 || echo "WARNING: 'uv python list' failed"
+    
     echo "Checking if Python version $PYTHON_VERSION is available..."
     if uv python list 2>/dev/null | grep -q "$PYTHON_VERSION"; then
         echo "Python version $PYTHON_VERSION found, creating venv..."
-        uv venv --python "$PYTHON_VERSION" >/dev/null 2>&1
+        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\""
+        if ! uv venv --python "$PYTHON_VERSION" 2>&1; then
+            echo "ERROR: 'uv venv --python $PYTHON_VERSION' failed with exit code $?"
+            echo "DEBUG: Checking if .venv directory was partially created..."
+            if [ -d ".venv" ]; then
+                echo "DEBUG: .venv directory exists but may be incomplete:"
+                ls -la .venv/ 2>&1 || true
+            fi
+            exit 1
+        fi
     else
         echo "Python version $PYTHON_VERSION not found, installing..."
-        uv python install "$PYTHON_VERSION" >/dev/null 2>&1
+        echo "DEBUG: Running: uv python install \"$PYTHON_VERSION\""
+        if ! uv python install "$PYTHON_VERSION" 2>&1; then
+            echo "ERROR: 'uv python install $PYTHON_VERSION' failed with exit code $?"
+            exit 1
+        fi
         echo "Creating virtual environment with Python $PYTHON_VERSION..."
-        uv venv --python "$PYTHON_VERSION" >/dev/null 2>&1
+        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\""
+        if ! uv venv --python "$PYTHON_VERSION" 2>&1; then
+            echo "ERROR: 'uv venv --python $PYTHON_VERSION' failed with exit code $?"
+            echo "DEBUG: Checking if .venv directory was partially created..."
+            if [ -d ".venv" ]; then
+                echo "DEBUG: .venv directory exists but may be incomplete:"
+                ls -la .venv/ 2>&1 || true
+            fi
+            exit 1
+        fi
     fi
 else
     echo "Using default Python version..."
-    uv venv >/dev/null 2>&1
+    echo "DEBUG: Running: uv venv"
+    if ! uv venv 2>&1; then
+        echo "ERROR: 'uv venv' failed with exit code $?"
+        echo "DEBUG: Checking if .venv directory was partially created..."
+        if [ -d ".venv" ]; then
+            echo "DEBUG: .venv directory exists but may be incomplete:"
+            ls -la .venv/ 2>&1 || true
+        fi
+        exit 1
+    fi
 fi
 
 # Verify virtual environment was created
+echo "DEBUG: Verifying virtual environment..."
 if [ ! -f ".venv/bin/python" ]; then
     echo "ERROR: Failed to create virtual environment"
+    echo "DEBUG: .venv directory status:"
+    if [ -d ".venv" ]; then
+        echo "DEBUG: .venv directory exists:"
+        ls -la .venv/ 2>&1 || true
+        echo "DEBUG: .venv/bin contents:"
+        ls -la .venv/bin/ 2>&1 || true
+    else
+        echo "DEBUG: .venv directory does not exist"
+    fi
+    echo "DEBUG: Current directory contents:"
+    ls -la
     exit 1
 fi
 

@@ -183,11 +183,10 @@ python-3.11.x
 ## Configuration
 
 ### Environment Variables
-- `JUPYTER_ENABLE_LAB`: Set to "yes" to enable JupyterLab
-
 - `PYTHON_VERSION_OVERRIDE`: Override Python version (if not specified in runtime.txt)
 - `START_COMMAND_OVERRIDE`: Override the default start command
 - `CF_START_COMMAND`: Start command from CF CLI (internal use)
+- `DEBUG`: Set to "true" to enable verbose debug logging (default: false)
 
 ### Start Command Configuration
 
@@ -393,4 +392,3 @@ This buildpack is experimental and provided as-is. Use at your own risk.
 ---
 
 ⚠️ **EXPERIMENTAL** - This buildpack is not recommended for production use. Use at your own risk.
-# Fixed default JupyterLab command to use uv run

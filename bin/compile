@@ -1,6 +1,8 @@
 #!/bin/bash
 
-echo "=== Custom uv Buildpack v1.0.2-fix-double-path: Starting compilation ==="
+# Read version from VERSION file
+BUILDPACK_VERSION=$(cat "$(dirname "$0")/../VERSION" 2>/dev/null || echo "2.0.0")
+echo "=== UV Buildpack v${BUILDPACK_VERSION}: Starting compilation ==="
 
 # Set up environment
 set -e
@@ -26,22 +28,6 @@ source $HOME/.local/bin/env
 # Verify uv installation
 echo "uv version:"
 uv --version
-
-# Debug: Show current directory and files
-echo "Current directory: $(pwd)"
-echo "BUILD_PATH: $BUILD_PATH"
-
-# Show what files are available in current directory
-echo "Files in current directory:"
-ls -la
-
-# Show what files are in BUILD_PATH
-echo "Files in BUILD_PATH ($BUILD_PATH):"
-if [ -d "$BUILD_PATH" ]; then
-    ls -la "$BUILD_PATH"
-else
-    echo "BUILD_PATH directory does not exist"
-fi
 
 # Find the application directory
 APP_DIR=""
@@ -77,25 +63,19 @@ fi
 echo "Using application directory: $APP_DIR"
 cd "$APP_DIR"
 
-# List contents of /home/vcap/app (Cloud Foundry app directory)
-echo "=== CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
-echo "Contents of /home/vcap/app:"
-if [ -d "/home/vcap/app" ]; then
-    echo "Directory exists. Listing contents:"
-    ls -la /home/vcap/app
-else
-    echo "Directory /home/vcap/app does not exist yet"
-fi
-echo "=== END CLOUD FOUNDRY APP DIRECTORY CONTENTS ==="
-
 echo "UV installed during staging phase - dependencies will be installed at runtime"
 
 # Create a startup script that installs dependencies at runtime
 echo "Creating startup script..."
-cat > "$BUILD_PATH/start-uv.sh" << 'EOF'
+cat > "$BUILD_PATH/start-uv.sh" << EOF
 #!/bin/bash
 
-echo "=== UV Buildpack v1.0.2-fix-double-path: Starting application ==="
+# Read version from VERSION file
+BUILDPACK_VERSION=\$(cat /home/vcap/app/VERSION 2>/dev/null || echo "2.0.0")
+echo "=== UV Buildpack v\${BUILDPACK_VERSION}: Starting application ==="
+
+# Enable debug logging if DEBUG environment variable is set
+DEBUG=\${DEBUG:-false}
 
 # Install uv in runtime environment
 echo "Installing uv in runtime environment..."
@@ -135,80 +115,93 @@ fi
 
 # Create virtual environment with enhanced Python version handling
 echo "Creating virtual environment..."
-echo "DEBUG: Current directory: $(pwd)"
-echo "DEBUG: Disk space available:"
-df -h .
-echo "DEBUG: Permissions on current directory:"
-ls -ld .
-echo "DEBUG: Contents of current directory:"
-ls -la
+if [ "$DEBUG" = "true" ]; then
+    echo "DEBUG: Current directory: \$(pwd)"
+    echo "DEBUG: Disk space available:"
+    df -h .
+    echo "DEBUG: Permissions on current directory:"
+    ls -ld .
+fi
 
-if [ -n "$PYTHON_VERSION" ]; then
-    echo "DEBUG: Python version requested: $PYTHON_VERSION"
-    echo "DEBUG: Checking available Python versions..."
-    uv python list 2>&1 || echo "WARNING: 'uv python list' failed"
+if [ -n "\$PYTHON_VERSION" ]; then
+    if [ "\$DEBUG" = "true" ]; then
+        echo "DEBUG: Python version requested: \$PYTHON_VERSION"
+        echo "DEBUG: Checking available Python versions..."
+        uv python list 2>&1 || echo "WARNING: 'uv python list' failed"
+    fi
     
-    echo "Checking if Python version $PYTHON_VERSION is available..."
-    if uv python list 2>/dev/null | grep -q "$PYTHON_VERSION"; then
-        echo "Python version $PYTHON_VERSION found, creating venv..."
-        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\" --clear"
-        if ! uv venv --python "$PYTHON_VERSION" --clear 2>&1; then
-            echo "ERROR: 'uv venv --python $PYTHON_VERSION' failed with exit code $?"
-            echo "DEBUG: Checking if .venv directory was partially created..."
-            if [ -d ".venv" ]; then
-                echo "DEBUG: .venv directory exists but may be incomplete:"
-                ls -la .venv/ 2>&1 || true
+    echo "Checking if Python version \$PYTHON_VERSION is available..."
+    if uv python list 2>/dev/null | grep -q "\$PYTHON_VERSION"; then
+        echo "Python version \$PYTHON_VERSION found, creating venv..."
+        if [ "\$DEBUG" = "true" ]; then
+            echo "DEBUG: Running: uv venv --python \"\$PYTHON_VERSION\" --clear"
+        fi
+        if ! uv venv --python "\$PYTHON_VERSION" --clear 2>&1; then
+            echo "ERROR: Failed to create virtual environment with Python \$PYTHON_VERSION"
+            if [ "\$DEBUG" = "true" ]; then
+                if [ -d ".venv" ]; then
+                    echo "DEBUG: .venv directory exists but may be incomplete:"
+                    ls -la .venv/ 2>&1 || true
+                fi
             fi
             exit 1
         fi
     else
-        echo "Python version $PYTHON_VERSION not found, installing..."
-        echo "DEBUG: Running: uv python install \"$PYTHON_VERSION\""
-        if ! uv python install "$PYTHON_VERSION" 2>&1; then
-            echo "ERROR: 'uv python install $PYTHON_VERSION' failed with exit code $?"
+        echo "Python version \$PYTHON_VERSION not found, installing..."
+        if [ "\$DEBUG" = "true" ]; then
+            echo "DEBUG: Running: uv python install \"\$PYTHON_VERSION\""
+        fi
+        if ! uv python install "\$PYTHON_VERSION" 2>&1; then
+            echo "ERROR: Failed to install Python \$PYTHON_VERSION"
             exit 1
         fi
-        echo "Creating virtual environment with Python $PYTHON_VERSION..."
-        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\" --clear"
-        if ! uv venv --python "$PYTHON_VERSION" --clear 2>&1; then
-            echo "ERROR: 'uv venv --python $PYTHON_VERSION' failed with exit code $?"
-            echo "DEBUG: Checking if .venv directory was partially created..."
-            if [ -d ".venv" ]; then
-                echo "DEBUG: .venv directory exists but may be incomplete:"
-                ls -la .venv/ 2>&1 || true
+        echo "Creating virtual environment with Python \$PYTHON_VERSION..."
+        if [ "\$DEBUG" = "true" ]; then
+            echo "DEBUG: Running: uv venv --python \"\$PYTHON_VERSION\" --clear"
+        fi
+        if ! uv venv --python "\$PYTHON_VERSION" --clear 2>&1; then
+            echo "ERROR: Failed to create virtual environment with Python \$PYTHON_VERSION"
+            if [ "\$DEBUG" = "true" ]; then
+                if [ -d ".venv" ]; then
+                    echo "DEBUG: .venv directory exists but may be incomplete:"
+                    ls -la .venv/ 2>&1 || true
+                fi
             fi
             exit 1
         fi
     fi
 else
     echo "Using default Python version..."
-    echo "DEBUG: Running: uv venv --clear"
+    if [ "\$DEBUG" = "true" ]; then
+        echo "DEBUG: Running: uv venv --clear"
+    fi
     if ! uv venv --clear 2>&1; then
-        echo "ERROR: 'uv venv' failed with exit code $?"
-        echo "DEBUG: Checking if .venv directory was partially created..."
-        if [ -d ".venv" ]; then
-            echo "DEBUG: .venv directory exists but may be incomplete:"
-            ls -la .venv/ 2>&1 || true
+        echo "ERROR: Failed to create virtual environment"
+        if [ "\$DEBUG" = "true" ]; then
+            if [ -d ".venv" ]; then
+                echo "DEBUG: .venv directory exists but may be incomplete:"
+                ls -la .venv/ 2>&1 || true
+            fi
         fi
         exit 1
     fi
 fi
 
 # Verify virtual environment was created
-echo "DEBUG: Verifying virtual environment..."
 if [ ! -f ".venv/bin/python" ]; then
     echo "ERROR: Failed to create virtual environment"
-    echo "DEBUG: .venv directory status:"
-    if [ -d ".venv" ]; then
-        echo "DEBUG: .venv directory exists:"
-        ls -la .venv/ 2>&1 || true
-        echo "DEBUG: .venv/bin contents:"
-        ls -la .venv/bin/ 2>&1 || true
-    else
-        echo "DEBUG: .venv directory does not exist"
+    if [ "\$DEBUG" = "true" ]; then
+        if [ -d ".venv" ]; then
+            echo "DEBUG: .venv directory exists:"
+            ls -la .venv/ 2>&1 || true
+            echo "DEBUG: .venv/bin contents:"
+            ls -la .venv/bin/ 2>&1 || true
+        else
+            echo "DEBUG: .venv directory does not exist"
+        fi
+        echo "DEBUG: Current directory contents:"
+        ls -la
     fi
-    echo "DEBUG: Current directory contents:"
-    ls -la
     exit 1
 fi
 
@@ -220,10 +213,6 @@ echo "Fixing shebangs in virtual environment binaries..."
 find .venv/bin -type f -executable -exec sed -i '1s|^#!.*|#!/home/vcap/app/.venv/bin/python|' {} \;
 echo "Shebangs fixed successfully"
 
-# Activate the virtual environment
-echo "Activating virtual environment..."
-source .venv/bin/activate
-
 # Enhanced dependency installation with lock file support
 echo "Installing dependencies..."
 
@@ -234,11 +223,9 @@ if [ -f "pyproject.toml" ]; then
         uv sync --frozen >/dev/null 2>&1
         echo "Dependencies installed successfully from lock file"
     else
-        echo "No lock file found, installing dependencies (may take longer)..."
-        # Extract dependencies from pyproject.toml using awk (original working approach)
-        dependencies=$(awk '/^dependencies = \[$/,/^\]$/' pyproject.toml | grep -v "dependencies = \[" | grep -v "^\]$" | sed 's/^[[:space:]]*"//' | sed 's/",*$//' | tr '\n' ' ')
-        echo "Installing dependencies: $dependencies"
-        uv pip install $dependencies >/dev/null 2>&1
+        echo "No lock file found, installing from pyproject.toml..."
+        # Use uv's native pyproject.toml support (sync installs from pyproject.toml)
+        uv sync --no-dev >/dev/null 2>&1
         echo "Dependencies installed successfully"
     fi
 elif [ -f "requirements.txt" ]; then
@@ -275,44 +262,44 @@ if [ -n "$START_COMMAND_OVERRIDE" ]; then
 fi
 
 # 2. Check for CF CLI command override
-if [ -z "$START_COMMAND" ] && [ -n "$CF_START_COMMAND" ]; then
-    START_COMMAND="$CF_START_COMMAND"
-    echo "Using CF CLI start command: $START_COMMAND"
+if [ -z "\$START_COMMAND" ] && [ -n "\$CF_START_COMMAND" ]; then
+    START_COMMAND="\$CF_START_COMMAND"
+    echo "Using CF CLI start command: \$START_COMMAND"
 fi
 
-        # 3. Fallback to JupyterLab if it's in dependencies and no other command specified
-        if [ -z "$START_COMMAND" ]; then
-            if [ -f "pyproject.toml" ] && grep -q "jupyterlab" pyproject.toml; then
-                echo "No start command specified, but jupyterlab found in dependencies. Starting JupyterLab..."
-                START_COMMAND="cd /home/vcap/app && uv run jupyter lab --ip=0.0.0.0 --port=$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
-            elif [ -f "requirements.txt" ] && grep -q "jupyterlab" requirements.txt; then
-                echo "No start command specified, but jupyterlab found in requirements.txt. Starting JupyterLab..."
-                START_COMMAND="cd /home/vcap/app && uv run jupyter lab --ip=0.0.0.0 --port=$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
-            else
-                echo "ERROR: No start command specified and jupyterlab not found in dependencies."
-                echo "Please provide one of the following:"
-                echo "  - A start command in your manifest.yml"
-                echo "  - Add jupyterlab to your dependencies for automatic startup"
-                echo "  - Use cf push with -c flag to specify a start command"
-                exit 1
-            fi
-        fi
+# 3. Fallback to JupyterLab if it's in dependencies and no other command specified
+if [ -z "\$START_COMMAND" ]; then
+    if [ -f "pyproject.toml" ] && grep -q "jupyterlab" pyproject.toml; then
+        echo "No start command specified, but jupyterlab found in dependencies. Starting JupyterLab..."
+        START_COMMAND="cd /home/vcap/app && uv run jupyter lab --ip=0.0.0.0 --port=\$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
+    elif [ -f "requirements.txt" ] && grep -q "jupyterlab" requirements.txt; then
+        echo "No start command specified, but jupyterlab found in requirements.txt. Starting JupyterLab..."
+        START_COMMAND="cd /home/vcap/app && uv run jupyter lab --ip=0.0.0.0 --port=\$PORT --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
+    else
+        echo "ERROR: No start command specified and jupyterlab not found in dependencies."
+        echo "Please provide one of the following:"
+        echo "  - A start command in your manifest.yml using START_COMMAND_OVERRIDE"
+        echo "  - Add jupyterlab to your dependencies for automatic startup"
+        exit 1
+    fi
+fi
 
-# Ensure we're using the virtual environment's Python
-export PATH="/home/vcap/app/.venv/bin:$PATH"
-echo "Using Python from: $(which python)"
-echo "Python version: $(python --version)"
+# Activate virtual environment and set up PATH
+source .venv/bin/activate
+export PATH="/home/vcap/app/.venv/bin:\$PATH"
+
+if [ "\$DEBUG" = "true" ]; then
+    echo "DEBUG: Using Python from: \$(which python)"
+    echo "DEBUG: Python version: \$(python --version)"
+fi
 
 echo "Starting application..."
-echo "Final command: $START_COMMAND"
-echo "=== UV Buildpack v1.0.2-fix-double-path: Launching application ==="
+if [ "\$DEBUG" = "true" ]; then
+    echo "DEBUG: Final command: \$START_COMMAND"
+fi
+echo "=== UV Buildpack v\${BUILDPACK_VERSION}: Launching application ==="
 
-        # Activate virtual environment and execute
-        echo "Activating virtual environment and executing..."
-        source .venv/bin/activate
-        echo "Virtual environment activated. Python path: $(which python)"
-        echo "Executing: $START_COMMAND"
-        eval "$START_COMMAND"
+eval "\$START_COMMAND"
 EOF
 
 chmod +x "$BUILD_PATH/start-uv.sh"
@@ -334,8 +321,12 @@ else
     cp -r ./* /home/vcap/app/ 2>/dev/null || true
 fi
 
+# Copy VERSION file to app directory for runtime version display
+if [ -f "$(dirname "$0")/../VERSION" ]; then
+    cp "$(dirname "$0")/../VERSION" /home/vcap/app/VERSION 2>/dev/null || true
+fi
+
 echo "Application files copied to runtime directory successfully"
-echo "Virtual environment location: /home/vcap/app/.venv/"
 
 echo "Application setup completed successfully"
-echo "=== Custom uv Buildpack v1.0.2-fix-double-path: Compilation completed successfully ==="
+echo "=== UV Buildpack v${BUILDPACK_VERSION}: Compilation completed successfully ==="

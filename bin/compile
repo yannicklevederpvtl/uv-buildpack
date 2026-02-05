@@ -151,8 +151,8 @@ if [ -n "$PYTHON_VERSION" ]; then
     echo "Checking if Python version $PYTHON_VERSION is available..."
     if uv python list 2>/dev/null | grep -q "$PYTHON_VERSION"; then
         echo "Python version $PYTHON_VERSION found, creating venv..."
-        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\""
-        if ! uv venv --python "$PYTHON_VERSION" 2>&1; then
+        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\" --clear"
+        if ! uv venv --python "$PYTHON_VERSION" --clear 2>&1; then
             echo "ERROR: 'uv venv --python $PYTHON_VERSION' failed with exit code $?"
             echo "DEBUG: Checking if .venv directory was partially created..."
             if [ -d ".venv" ]; then
@@ -169,8 +169,8 @@ if [ -n "$PYTHON_VERSION" ]; then
             exit 1
         fi
         echo "Creating virtual environment with Python $PYTHON_VERSION..."
-        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\""
-        if ! uv venv --python "$PYTHON_VERSION" 2>&1; then
+        echo "DEBUG: Running: uv venv --python \"$PYTHON_VERSION\" --clear"
+        if ! uv venv --python "$PYTHON_VERSION" --clear 2>&1; then
             echo "ERROR: 'uv venv --python $PYTHON_VERSION' failed with exit code $?"
             echo "DEBUG: Checking if .venv directory was partially created..."
             if [ -d ".venv" ]; then
@@ -182,8 +182,8 @@ if [ -n "$PYTHON_VERSION" ]; then
     fi
 else
     echo "Using default Python version..."
-    echo "DEBUG: Running: uv venv"
-    if ! uv venv 2>&1; then
+    echo "DEBUG: Running: uv venv --clear"
+    if ! uv venv --clear 2>&1; then
         echo "ERROR: 'uv venv' failed with exit code $?"
         echo "DEBUG: Checking if .venv directory was partially created..."
         if [ -d ".venv" ]; then

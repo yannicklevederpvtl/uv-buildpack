@@ -81,16 +81,29 @@ DEBUG=\${DEBUG:-false}
 echo "Installing uv in runtime environment..."
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Add uv to PATH
-export PATH="$HOME/.local/bin:$PATH"
+# Source the uv environment (this sets up PATH correctly)
+if [ -f "\$HOME/.local/bin/env" ]; then
+    source "\$HOME/.local/bin/env"
+elif [ -f "/home/vcap/app/.local/bin/env" ]; then
+    source "/home/vcap/app/.local/bin/env"
+fi
+
+# Add uv to PATH (fallback if env file doesn't exist)
+export PATH="\$HOME/.local/bin:/home/vcap/app/.local/bin:\$PATH"
 
 # Verify uv installation
 if ! command -v uv &> /dev/null; then
     echo "ERROR: Failed to install uv"
+    if [ "\$DEBUG" = "true" ]; then
+        echo "DEBUG: Checking uv installation locations..."
+        ls -la "\$HOME/.local/bin/uv" 2>&1 || true
+        ls -la "/home/vcap/app/.local/bin/uv" 2>&1 || true
+        echo "DEBUG: PATH is: \$PATH"
+    fi
     exit 1
 fi
 
-echo "UV installed successfully: $(uv --version)"
+echo "UV installed successfully: \$(uv --version)"
 
 # Change to application directory
 cd "/home/vcap/app"

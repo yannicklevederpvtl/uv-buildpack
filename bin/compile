@@ -107,23 +107,23 @@ echo "UV installed successfully: \$(uv --version)"
 
 # Change to application directory
 cd "/home/vcap/app"
-echo "Changed to application directory: $(pwd)"
+echo "Changed to application directory: \$(pwd)"
 
 # Enhanced Python version management
 PYTHON_VERSION=""
 if [ -f "runtime.txt" ]; then
     echo "Found runtime.txt, setting Python version..."
-    PYTHON_VERSION=$(cat runtime.txt | sed 's/python-//')
-    echo "Using Python version from runtime.txt: $PYTHON_VERSION"
-elif [ -n "$PYTHON_VERSION_OVERRIDE" ]; then
-    PYTHON_VERSION="$PYTHON_VERSION_OVERRIDE"
-    echo "Using Python version from environment: $PYTHON_VERSION"
+    PYTHON_VERSION=\$(cat runtime.txt | sed 's/python-//')
+    echo "Using Python version from runtime.txt: \$PYTHON_VERSION"
+elif [ -n "\$PYTHON_VERSION_OVERRIDE" ]; then
+    PYTHON_VERSION="\$PYTHON_VERSION_OVERRIDE"
+    echo "Using Python version from environment: \$PYTHON_VERSION"
 fi
 
 # Clean up Python version string (remove .x suffix if present)
-if [[ "$PYTHON_VERSION" == *".x" ]]; then
-    PYTHON_VERSION=$(echo "$PYTHON_VERSION" | sed 's/\.x$//')
-    echo "Cleaned Python version: $PYTHON_VERSION"
+if [[ "\$PYTHON_VERSION" == *".x" ]]; then
+    PYTHON_VERSION=\$(echo "\$PYTHON_VERSION" | sed 's/\.x\$//')
+    echo "Cleaned Python version: \$PYTHON_VERSION"
 fi
 
 # Create virtual environment with enhanced Python version handling
@@ -219,7 +219,7 @@ if [ ! -f ".venv/bin/python" ]; then
 fi
 
 echo "Virtual environment created successfully"
-echo "Using Python: $(.venv/bin/python --version)"
+echo "Using Python: \$(.venv/bin/python --version)"
 
 # Fix shebangs in virtual environment binaries
 echo "Fixing shebangs in virtual environment binaries..."
